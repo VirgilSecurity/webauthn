@@ -14,10 +14,10 @@ import (
 	"github.com/mitchellh/mapstructure"
 )
 
-var safetyNetAttestationKey = "android-safetynet"
+var SafetyNetAttestationKey = "android-safetynet"
 
 func init() {
-	RegisterAttestationFormat(safetyNetAttestationKey, verifySafetyNetFormat)
+	RegisterAttestationFormat(SafetyNetAttestationKey, VerifySafetyNetFormat)
 }
 
 type SafetyNetResponse struct {
@@ -39,7 +39,7 @@ type SafetyNetResponse struct {
 //  some statements about the health of the platform and the identity of the calling application. This attestation does not
 // provide information regarding provenance of the authenticator and its associated data. Therefore platform-provided
 // authenticators SHOULD make use of the Android Key Attestation when available, even if the SafetyNet API is also present.
-func verifySafetyNetFormat(att AttestationObject, clientDataHash []byte) (string, []interface{}, error) {
+func VerifySafetyNetFormat(att AttestationObject, clientDataHash []byte) (string, []interface{}, error) {
 	// The syntax of an Android Attestation statement is defined as follows:
 	//     $$attStmtType //= (
 	//                           fmt: "android-safetynet",
@@ -58,18 +58,18 @@ func verifySafetyNetFormat(att AttestationObject, clientDataHash []byte) (string
 	// §8.5.2 Verify that response is a valid SafetyNet response of version ver.
 	version, present := att.AttStatement["ver"].(string)
 	if !present {
-		return safetyNetAttestationKey, nil, ErrAttestationFormat.WithDetails("Unable to find the version of SafetyNet")
+		return SafetyNetAttestationKey, nil, ErrAttestationFormat.WithDetails("Unable to find the version of SafetyNet")
 	}
 
 	if version == "" {
-		return safetyNetAttestationKey, nil, ErrAttestationFormat.WithDetails("Not a proper version for SafetyNet")
+		return SafetyNetAttestationKey, nil, ErrAttestationFormat.WithDetails("Not a proper version for SafetyNet")
 	}
 
 	// TODO: provide user the ability to designate their supported versions
 
 	response, present := att.AttStatement["response"].([]byte)
 	if !present {
-		return safetyNetAttestationKey, nil, ErrAttestationFormat.WithDetails("Unable to find the SafetyNet response")
+		return SafetyNetAttestationKey, nil, ErrAttestationFormat.WithDetails("Unable to find the SafetyNet response")
 	}
 
 	token, err := jwt.Parse(string(response), func(token *jwt.Token) (interface{}, error) {
@@ -80,7 +80,7 @@ func verifySafetyNetFormat(att AttestationObject, clientDataHash []byte) (string
 		return cert.PublicKey, err
 	})
 	if err != nil {
-		return safetyNetAttestationKey, nil, ErrInvalidAttestation.WithDetails(fmt.Sprintf("Error finding cert issued to correct hostname: %+v", err))
+		return SafetyNetAttestationKey, nil, ErrInvalidAttestation.WithDetails(fmt.Sprintf("Error finding cert issued to correct hostname: %+v", err))
 	}
 
 	// marshall the JWT payload into the safetynet response json
@@ -88,7 +88,7 @@ func verifySafetyNetFormat(att AttestationObject, clientDataHash []byte) (string
 	err = mapstructure.Decode(token.Claims, &safetyNetResponse)
 	if err != nil {
 		fmt.Println(err)
-		return safetyNetAttestationKey, nil, ErrAttestationFormat.WithDetails(fmt.Sprintf("Error parsing the SafetyNet response: %+v", err))
+		return SafetyNetAttestationKey, nil, ErrAttestationFormat.WithDetails(fmt.Sprintf("Error parsing the SafetyNet response: %+v", err))
 	}
 
 	// §8.5.3 Verify that the nonce in the response is identical to the Base64 encoding of the SHA-256 hash of the concatenation
@@ -96,7 +96,7 @@ func verifySafetyNetFormat(att AttestationObject, clientDataHash []byte) (string
 	nonceBuffer := sha256.Sum256(append(att.RawAuthData, clientDataHash...))
 	nonceBytes, err := base64.StdEncoding.DecodeString(safetyNetResponse.Nonce)
 	if !bytes.Equal(nonceBuffer[:], nonceBytes) || err != nil {
-		return safetyNetAttestationKey, nil, ErrInvalidAttestation.WithDetails("Invalid nonce for in SafetyNet response")
+		return SafetyNetAttestationKey, nil, ErrInvalidAttestation.WithDetails("Invalid nonce for in SafetyNet response")
 	}
 
 	// §8.5.4 Let attestationCert be the attestation certificate (https://www.w3.org/TR/webauthn/#attestation-certificate)
@@ -104,22 +104,22 @@ func verifySafetyNetFormat(att AttestationObject, clientDataHash []byte) (string
 	l := make([]byte, base64.StdEncoding.DecodedLen(len(certChain[0].(string))))
 	n, err := base64.StdEncoding.Decode(l, []byte(certChain[0].(string)))
 	if err != nil {
-		return safetyNetAttestationKey, nil, ErrInvalidAttestation.WithDetails(fmt.Sprintf("Error finding cert issued to correct hostname: %+v", err))
+		return SafetyNetAttestationKey, nil, ErrInvalidAttestation.WithDetails(fmt.Sprintf("Error finding cert issued to correct hostname: %+v", err))
 	}
 	attestationCert, err := x509.ParseCertificate(l[:n])
 	if err != nil {
-		return safetyNetAttestationKey, nil, ErrInvalidAttestation.WithDetails(fmt.Sprintf("Error finding cert issued to correct hostname: %+v", err))
+		return SafetyNetAttestationKey, nil, ErrInvalidAttestation.WithDetails(fmt.Sprintf("Error finding cert issued to correct hostname: %+v", err))
 	}
 
 	// §8.5.5 Verify that attestationCert is issued to the hostname "attest.android.com"
 	err = attestationCert.VerifyHostname("attest.android.com")
 	if err != nil {
-		return safetyNetAttestationKey, nil, ErrInvalidAttestation.WithDetails(fmt.Sprintf("Error finding cert issued to correct hostname: %+v", err))
+		return SafetyNetAttestationKey, nil, ErrInvalidAttestation.WithDetails(fmt.Sprintf("Error finding cert issued to correct hostname: %+v", err))
 	}
 
 	// §8.5.6 Verify that the ctsProfileMatch attribute in the payload of response is true.
 	if !safetyNetResponse.CtsProfileMatch {
-		return safetyNetAttestationKey, nil, ErrInvalidAttestation.WithDetails("ctsProfileMatch attribute of the JWT payload is false")
+		return SafetyNetAttestationKey, nil, ErrInvalidAttestation.WithDetails("ctsProfileMatch attribute of the JWT payload is false")
 	}
 
 	// Verify sanity of timestamp in the payload

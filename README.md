@@ -49,7 +49,7 @@ func main() {
 ```golang
 func BeginRegistration(w http.ResponseWriter, r *http.Request) {
     user := datastore.GetUser() // Find or create the new user  
-    options, sessionData, err := web.BeginRegistration(&user)
+    options, sessionData, err := webauthn.BeginRegistration(&user)
     // handle errors if present
     // store the sessionData values 
     JSONResponse(w, options, http.StatusOK) // return the options generated
@@ -61,7 +61,7 @@ func FinishRegistration(w http.ResponseWriter, r *http.Request) {
     // Get the session data stored from the function above
     // using gorilla/sessions it could look like this
     sessionData := store.Get(r, "registration-session")
-    credential, err := web.FinishRegistration(&user, sessionData, r)
+    credential, err := webauthn.FinishRegistration(&user, sessionData, r)
     // Handle validation or input errors
     // If creation was successful, store the credential object
     JSONResponse(w, "Registration Success", http.StatusOK) // Handle next steps

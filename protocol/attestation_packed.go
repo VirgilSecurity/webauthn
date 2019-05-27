@@ -14,10 +14,40 @@ import (
 	"github.com/duo-labs/webauthn/protocol/webauthncose"
 )
 
-var packedAttestationKey = "packed"
+var PackedAttestationKey = "packed"
+
+type KeyExtractor interface {
+	GetKey() ([]byte, error)
+}
+
+type keyExtractor struct{}
+
+func GetKey() ([]byte, error) {
+	return nil, nil
+}
+
+type ECDAAAttestationHandler interface {
+	HandleAttestation(
+		alg int64,
+		sig, authenticatorData, clientDataHash, ecdaaKeyID []byte,
+	) (string, []interface{}, error)
+}
+
+var DefaultECDAAAttestationHandler ECDAAAttestationHandler
+
+type ecdaaAttestationHandler struct{}
+
+func (h *ecdaaAttestationHandler) HandleAttestation(
+	alg int64,
+	sig, authenticatorData, clientDataHash, ecdaaKeyID []byte,
+	keyExtractor KeyExtractor,
+) (string, []interface{}, error) {
+	return "Packed (ECDAA)", nil, ErrNotSpecImplemented
+}
 
 func init() {
-	RegisterAttestationFormat(packedAttestationKey, verifyPackedFormat)
+	RegisterAttestationFormat(PackedAttestationKey, VerifyPackedFormat)
+	DefaultECDAAAttestationHandler = &ecdaaAttestationHandler{}
 }
 
 // From §8.2. https://www.w3.org/TR/webauthn/#packed-attestation
@@ -36,7 +66,7 @@ func init() {
 //		 	alg: COSEAlgorithmIdentifier
 //		 	sig: bytes,
 //		 }
-func verifyPackedFormat(att AttestationObject, clientDataHash []byte) (string, []interface{}, error) {
+func VerifyPackedFormat(att AttestationObject, clientDataHash []byte) (string, []interface{}, error) {
 	// Step 1. Verify that attStmt is valid CBOR conforming to the syntax defined
 	// above and perform CBOR decoding on it to extract the contained fields.
 
@@ -45,36 +75,36 @@ func verifyPackedFormat(att AttestationObject, clientDataHash []byte) (string, [
 
 	alg, present := att.AttStatement["alg"].(int64)
 	if !present {
-		return packedAttestationKey, nil, ErrAttestationFormat.WithDetails("Error retreiving alg value")
+		return PackedAttestationKey, nil, ErrAttestationFormat.WithDetails("Error retreiving alg value")
 	}
 
 	// Get the sig value - A byte string containing the attestation signature.
 	sig, present := att.AttStatement["sig"].([]byte)
 	if !present {
-		return packedAttestationKey, nil, ErrAttestationFormat.WithDetails("Error retreiving sig value")
+		return PackedAttestationKey, nil, ErrAttestationFormat.WithDetails("Error retreiving sig value")
 	}
 
 	// Step 2. If x5c is present, this indicates that the attestation type is not ECDAA.
 	x5c, x509present := att.AttStatement["x5c"].([]interface{})
 	if x509present {
 		// Handle Basic Attestation steps for the x509 Certificate
-		return handleBasicAttestation(sig, clientDataHash, att.RawAuthData, att.AuthData.AttData.AAGUID, alg, x5c)
+		return HandleBasicAttestation(sig, clientDataHash, att.RawAuthData, att.AuthData.AttData.AAGUID, alg, x5c)
 	}
 
 	// Step 3. If ecdaaKeyId is present, then the attestation type is ECDAA.
 	// Also make sure the we did not have an x509 then
 	ecdaaKeyID, ecdaaKeyPresent := att.AttStatement["ecdaaKeyId"].([]byte)
 	if ecdaaKeyPresent {
-		// Handle ECDAA Attestation steps for the x509 Certificate
-		return handleECDAAAttesation(sig, clientDataHash, ecdaaKeyID)
+		// Handle ECDAA Attestation steps for ecdaa
+		return DefaultECDAAAttestationHandler.HandleAttestation(alg, sig, att.RawAuthData, clientDataHash, ecdaaKeyID)
 	}
 
 	// Step 4. If neither x5c nor ecdaaKeyId is present, self attestation is in use.
-	return handleSelfAttestation(alg, att.AuthData.AttData.CredentialPublicKey, att.RawAuthData, clientDataHash, sig)
+	return HandleSelfAttestation(alg, att.AuthData.AttData.CredentialPublicKey, att.RawAuthData, clientDataHash, sig)
 }
 
 // Handle the attestation steps laid out in
-func handleBasicAttestation(signature, clientDataHash, authData, aaguid []byte, alg int64, x5c []interface{}) (string, []interface{}, error) {
+func HandleBasicAttestation(signature, clientDataHash, authData, aaguid []byte, alg int64, x5c []interface{}) (string, []interface{}, error) {
 	// Step 2.1. Verify that sig is a valid signature over the concatenation of authenticatorData
 	// and clientDataHash using the attestation public key in attestnCert with the algorithm specified in alg.
 	attestationType := "Packed (Basic)"
@@ -222,11 +252,7 @@ func handleBasicAttestation(signature, clientDataHash, authData, aaguid []byte, 
 	return attestationType, x5c, nil
 }
 
-func handleECDAAAttesation(signature, clientDataHash, ecdaaKeyID []byte) (string, []interface{}, error) {
-	return "Packed (ECDAA)", nil, ErrNotSpecImplemented
-}
-
-func handleSelfAttestation(alg int64, pubKey, authData, clientDataHash, signature []byte) (string, []interface{}, error) {
+func HandleSelfAttestation(alg int64, pubKey, authData, clientDataHash, signature []byte) (string, []interface{}, error) {
 	attestationType := "Packed (Self)"
 	// §4.1 Validate that alg matches the algorithm of the credentialPublicKey in authenticatorData.
 
@@ -242,19 +268,19 @@ func handleSelfAttestation(alg int64, pubKey, authData, clientDataHash, signatur
 	switch key.(type) {
 	case webauthncose.OKPPublicKeyData:
 		k := key.(webauthncose.OKPPublicKeyData)
-		err := verifyKeyAlgorithm(k.Algorithm, alg)
+		err := VerifyKeyAlgorithm(k.Algorithm, alg)
 		if err != nil {
 			return attestationType, nil, err
 		}
 	case webauthncose.EC2PublicKeyData:
 		k := key.(webauthncose.EC2PublicKeyData)
-		err := verifyKeyAlgorithm(k.Algorithm, alg)
+		err := VerifyKeyAlgorithm(k.Algorithm, alg)
 		if err != nil {
 			return attestationType, nil, err
 		}
 	case webauthncose.RSAPublicKeyData:
 		k := key.(webauthncose.RSAPublicKeyData)
-		err := verifyKeyAlgorithm(k.Algorithm, alg)
+		err := VerifyKeyAlgorithm(k.Algorithm, alg)
 		if err != nil {
 			return attestationType, nil, err
 		}
@@ -270,7 +296,7 @@ func handleSelfAttestation(alg int64, pubKey, authData, clientDataHash, signatur
 	return attestationType, nil, err
 }
 
-func verifyKeyAlgorithm(keyAlgorithm, attestedAlgorithm int64) error {
+func VerifyKeyAlgorithm(keyAlgorithm, attestedAlgorithm int64) error {
 	if keyAlgorithm != attestedAlgorithm {
 		return ErrInvalidAttestation.WithDetails("Public key algorithm does not equal att statement algorithm")
 	}
