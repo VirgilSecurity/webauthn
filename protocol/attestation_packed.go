@@ -16,16 +16,6 @@ import (
 
 var PackedAttestationKey = "packed"
 
-type KeyExtractor interface {
-	GetKey() ([]byte, error)
-}
-
-type keyExtractor struct{}
-
-func GetKey() ([]byte, error) {
-	return nil, nil
-}
-
 type ECDAAAttestationHandler interface {
 	HandleAttestation(
 		alg int64,
@@ -40,7 +30,6 @@ type ecdaaAttestationHandler struct{}
 func (h *ecdaaAttestationHandler) HandleAttestation(
 	alg int64,
 	sig, authenticatorData, clientDataHash, ecdaaKeyID []byte,
-	keyExtractor KeyExtractor,
 ) (string, []interface{}, error) {
 	return "Packed (ECDAA)", nil, ErrNotSpecImplemented
 }
